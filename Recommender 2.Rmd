@@ -1,0 +1,110 @@
+---
+title: "Evaluating Recommender Systems"
+author: "Yadu"
+date: "February 28, 2017"
+output: html_document
+---
+
+## Motivation
+
+The purpose here is to build several recommender systems for a dataset and evaluate their performance. When we apply the system to a testing subset of the dataset, the accuracy of several recommender models can be compared.  
+
+## Data Utilized
+
+The dataset used here is the `MovieLense` dataset included in the `recommenderlab` package. The ratings all range between 1 and 5. Given that each user in the dataset has a maximum of 735 rated movies and a minimum of 19 rated movies, we will pick users who have not rated more than 1,400 movies so that we can facilitate better recommendations.
+
+```{r}
+library(recommenderlab)
+data(MovieLense)
+#ncol(BX) - max(rowCounts(BX))
+ML <- MovieLense[ncol(MovieLense) - rowCounts(MovieLense) > 1400]
+```
+
+## Data Splitting
+
+To evaluate the accuracy, we split the adjusted dataset into a training set and a testing set. The built-in `evaluationScheme` is used. The training set includes 80% of the adjusted dataset. The remaining 20% is the testing set. The number of items given for evaluation is 19 because in this adjusted dataset the minimum number of movies rated by a user is 19. The threshold here is the minimum rating that would be considered good which is the average of the highest rating (5) and lowest rating (1).  
+
+```{r}
+eval_sets <- evaluationScheme(data = ML, method = "split",
+train = 0.8, given = 19, goodRating = 3)
+```
+
+## Models Considered
+
+The algorithms used are UBCF and IBCF. For each algorithm, two similarity methods are used - Cosine and Pearson Correlation.
+
+```{r}
+models <- list(
+IBCF_cos = list(name = "IBCF", param = list(method = "cosine")),
+IBCF_cor = list(name = "IBCF", param = list(method = "pearson")),
+UBCF_cos = list(name = "UBCF", param = list(method = "cosine")),
+UBCF_cor = list(name = "UBCF", param = list(method = "pearson"))
+)
+```
+
+## Model Evaluation
+
+Each of the four models is evaluated with each model providing 1 to 19 recommendations per user.
+
+```{r}
+eval_results <- evaluate(x = eval_sets, method = models, n = 1:19)
+```
+
+## Model Accuracy
+
+The confusion matrix for each model is extracted at each number of recommendations for each model.
+
+```{r, echo=FALSE}
+avg(eval_results)
+```
+
+## Model Performance 
+
+From both plots below, it is evident that the best-performing model would be the user-user-based model with the cosine distance. From looking at the ROC curve, it can easily be inferred that the user-user-based model with the cosine distance yields the highest area under the curve. Now, the appropriate number of items to recommend need to be set.    
+
+```{r, echo = FALSE}
+plot(eval_results, "prec/rec", annotate = T, main = "Precision-recall")
+title("Precision-recall")
+```
+
+```{r, echo = FALSE}
+plot(eval_results, annotate = 1, legend = "topleft") 
+title("ROC curve")
+```
+
+## Optimizing a Numeric Parameter
+
+Because k was left to its default value of 30, higher values ranging between 100 and 200 were considered as well as lower values of 1 and 5. The default value of 30 was kept as a control. IBCF takes into account the k-closest items. k needs to be optimized here.  
+
+```{r}
+vector_k <- c(1,5,30,seq(50,70,10))
+```
+
+The models to evaluate are listed as follows with cosine as the distance metric. 
+
+```{r}
+models_to_evaluate <- lapply(vector_k, function(k){
+list(name = "IBCF", param = list(method = "cosine", k = k))
+})
+names(models_to_evaluate) <- paste0("IBCF_k_", vector_k)
+```
+
+```{r}
+eval_results_2 <- evaluate(x = eval_sets, method = models_to_evaluate, n = 1:19)
+```
+
+From both plots below, it is evident that as the value of k increases, the area under the curve decreases unless k is 1. Although k = 1 is a good candidate, it can never have a high TPR. The IBCF with this value recommends minimal items similar to the purchases.
+
+It depends on what has to be achieved. According to the second graph, in order to achieve the highest recall, k has to be 1. If precision is more important, k has to be 5. 
+
+```{r}
+plot(eval_results_2, "prec/rec", annotate = T, legend = "bottomright") 
+title("Precision-recall")
+```
+
+```{r}
+plot(eval_results_2, annotate = 1, legend = "topleft") 
+title("ROC curve")
+```
+
+We can conclude that the best-performing model would be the user-user-based model with cosine distance. The optimal value of k would have to be very low. 
